@@ -6,7 +6,7 @@ from dotenv import dotenv_values
 import json
 
 # get env variables
-config = dotenv_values(".env")
+config = dotenv_values("tokens.env")
 
 # initalize
 intents = discord.Intents(messages=True, guilds=True, members=True)
