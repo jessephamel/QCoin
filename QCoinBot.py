@@ -2,8 +2,11 @@ import discord
 import asyncio
 from tinydb import TinyDB, Query
 from discord.ext import commands
-import os
+from dotenv import dotenv_values
 import json
+
+# get env variables
+config = dotenv_values(".env")
 
 # initalize
 intents = discord.Intents(messages=True, guilds=True, members=True)
@@ -13,9 +16,16 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 db = TinyDB('qcoin_db.json')
 
+# print to console when logged in to discord
+@bot.event
+async def on_ready():
+    print('We have logged in')
+
+# ///////////////////////////////////////////////////////// Helper Functions
+
 # check if the command was run by me
 def is_me(ctx):
-    return ctx.message.author.id == MY_USER_ID
+    return ctx.message.author.id == config['MY_USER_ID']
 
 # return the stock of specified item
 def getItemStock(user_id, item):
@@ -26,6 +36,24 @@ def getItemStock(user_id, item):
 
     return u[item]
 
+# return the coin balance of specified user
+def getCoinsBalance(user_id):
+    global db
+
+    q = Query()
+    u = db.search(q.user_id == int(user_id))[0]['coins']
+
+    return u
+
+# return the coin balance of specified user
+def setCoinsBalance(user_id, balance):
+    global db
+
+    q = Query()
+    u = db.search(q.user_id == int(user_id))[0]['coins']
+
+    db.update({'coins': balance}, q.user_id == user_id)
+
 # return the inventory of specified user
 def getUserInventory(user_id):
     global db
@@ -35,23 +63,7 @@ def getUserInventory(user_id):
 
     return u
 
-# set the stock of specified user's item
-def setItemStock(user_id, item, amount):
-    global db
-
-    q = Query()
-    u = db.search(q.user_id == int(user_id))[0]
-
-    for i in 
-    u['inventory']:
-        if i['name'].upper() == item.upper():
-            i['amount'] = int(amount)
-    # db.upsert(u, (q.user_id == int(user_id)))
-
-# print to console when logged in to discord
-@bot.event
-async def on_ready():
-    print('We have logged in')
+# ///////////////////////////////////////////////////////// Admin Bot Commands
 
 # insert the users that don't already exist
 @bot.command(name='initdb')
@@ -69,34 +81,31 @@ async def initdb(ctx):
         if len(db.search(q.user_id == int(m.id))) == 0:
             db.insert({'user_id': m.id, 
                         'name': m.name,
+                        'coins': 100,
                         'inventory': [] 
                         })
             print('inserting {}'.format(m.id))
         else:
             print('already exists')
 
-# add an item to the db
-@bot.command(name='additem')
+# mint coins for me only
+@bot.command(name='mint')
 @commands.check(is_me)
-async def additem(ctx, arg1):
-    add_Item(arg1)
-
-# set the stock of item in db
-@bot.command(name='setamt')
-@commands.check(is_me)
-async def setamt(ctx, arg1, item, amount):
+async def mint(ctx, amount):
     global db
 
-    r = ctx.message.mentions[0]
+    g = ctx.message.guild
+    a = ctx.message.author
 
-    print(item)
-    print(amount)
+    a_bal = getCoinsBalance(config['MY_USER_ID'])
 
-    setItemStock(int(r.id), item, amount)
+    setCoinsBalance(config['MY_USER_ID'], a_bal+int(amount))
 
-# give coins or an item to a user
+# ///////////////////////////////////////////////////////// User Bot Commands
+
+# give coins to a user
 @bot.command(name='give')
-async def give(ctx, arg1, amount=0, item='QC'):
+async def give(ctx, arg1, amount=0):
     global db
 
     g = ctx.message.guild
@@ -104,23 +113,35 @@ async def give(ctx, arg1, amount=0, item='QC'):
     r = ctx.message.mentions[0]
     q = Query()
 
-    item = item.upper()
-
     if a.id != r.id:
         try:
-            a_stock = getItemStock(int(a.id), item)
-            r_stock = getItemStock(int(r.id), item)
+            a_bal = getCoinsBalance(int(a.id))
+            r_bal = getCoinsBalance(int(r.id))
             if int(amount) > 0:
-                if a_stock > int(amount):
-                    r_stock += amount
-                    a_stock -= amount
-                    setItemStock(int(r.id), item, r_stock)
-                    setItemStock(int(a.id), item, a_stock)
-                    await ctx.send("{0} {1} given to {2}".format(amount, item, r.name))
+                if a_bal > int(amount):
+                    r_bal += amount
+                    a_bal -= amount
+                    setCoinsBalance(int(r.id), r_bal)
+                    setCoinsBalance(int(a.id), a_bal)
+                    await ctx.send(f"**{amount}** coins given to {r.name}")
                 else:
                     await ctx.send("Insufficient funds!")
-        except KeyError:
-            await ctx.send("Item {} not found!".format(item))
+        except:
+            await ctx.send("Invalid amount")
+
+# get your coin balance
+@bot.command(name='balance')
+async def balance(ctx):
+    global db
+
+    g = ctx.message.guild
+    a = ctx.message.author
+
+    q = Query()
+
+    b = getCoinsBalance(a.id)
+    b_string = f"**{a.name}**, your QuadeCoin balance is: **{b}**"
+    await ctx.send(b_string)    
 
 # get the inventory of your own or another user
 @bot.command(name='inventory')
@@ -129,21 +150,15 @@ async def inventory(ctx):
 
     g = ctx.message.guild
     a = ctx.message.author
-    r = ctx.message.mentions
+
     q = Query()
 
     # recipient = db.search(q.user_id == int(r.id))[0]
-    if len(r) == 0:
-        u_inv = getUserInventory(a.id)
-        inv_string = "**{0}** has the following in their inventory:\n".format(a.name)
-        for k in u_inv.keys():
-            inv_string += "**{}** {}\n".format(u_inv[k], k)
-        await ctx.send(inv_string)
-    elif len(r) == 1:
-        u_inv = getUserInventory(r[0].id)
-        inv_string = "**{0}** has the following in their inventory:\n".format(r[0].name)
-        for k in u_inv.keys():
-            inv_string += "**{}** {}\n".format(u_inv[k], k)
-        await ctx.send(inv_string)
+    u_inv = getUserInventory(a.id)
+    inv_string = f"**{a.name}** has the following in their inventory:\n"
+    for i in u_inv:
+        for k in i.keys():
+            inv_string += f"**{i[k]}** {k}\n"
+    await ctx.send(inv_string)
 
-bot.run(TOKEN)
+bot.run(config['MY_TOKEN'])
