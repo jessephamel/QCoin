@@ -25,7 +25,7 @@ async def on_ready():
 
 # check if the command was run by me
 def is_me(ctx):
-    return ctx.message.author.id == config['MY_USER_ID']
+    return ctx.message.author.id == int(config['MY_USER_ID'])
 
 # return the stock of specified item
 def getItemStock(user_id, item):
@@ -82,11 +82,9 @@ async def initdb(ctx):
             db.insert({'user_id': m.id, 
                         'name': m.name,
                         'coins': 100,
-                        'inventory': [] 
+                        'inventory': {'bread': 1, 'games': 1}
                         })
             print('inserting {}'.format(m.id))
-        else:
-            print('already exists')
 
 # mint coins for me only
 @bot.command(name='mint')
