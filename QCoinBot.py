@@ -15,6 +15,7 @@ client = discord.Client()
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 db = TinyDB('qcoin_db.json')
+store_db = TinyDB('store_db.json')
 
 # print to console when logged in to discord
 @bot.event
